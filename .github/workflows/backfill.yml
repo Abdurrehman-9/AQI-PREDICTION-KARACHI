@@ -20,6 +20,7 @@ jobs:
           OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
           HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
+          HOPSWORKS_HOST: ${{ secrets.HOPSWORKS_HOST }}
           KARACHI_STATION_ID: "@karachi"
           KARACHI_LAT: "24.8607"
           KARACHI_LON: "67.0011"
