@@ -17,7 +17,7 @@ HOPSWORKS_PROJECT = os.getenv("HOPSWORKS_PROJECT", "AQI_Pred_Karachi")
 
 # This is the correct public host for app.hopsworks.ai free tier
 # Required when connecting from outside Hopsworks (GitHub Actions, etc.)
-HOPSWORKS_HOST = "c.app.hopsworks.ai"
+HOPSWORKS_HOST = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai")
 
 FEATURE_GROUP_NAME    = "aqi_features"
 FEATURE_GROUP_VERSION = 1
