@@ -55,8 +55,15 @@ def fetch_aqicn_historical(date_str: str) -> dict | None:
         # Return None — the main loop will use the CSV directly
         return None
 
+    # Fetch station config from environment variables
+    station = os.getenv("KARACHI_STATION_ID", "A471613")
+    
+    # Force generic placeholders to fallback to a verified working station layout
+    if not station or station.strip() in ["@karachi", "karachi"]:
+        station = "A471613"
+
     # Fallback: Call AQICN for current data (not historical)
-    url = f"https://api.waqi.info/feed/@karachi/"
+    url = f"https://api.waqi.info/feed/{station}/"
     resp = requests.get(url, params={"token": AQICN_TOKEN}, timeout=10)
     
     if resp.status_code == 200:
@@ -72,7 +79,7 @@ def fetch_aqicn_historical(date_str: str) -> dict | None:
             return None
 
         if res_json.get("status") == "error":
-            print(f"❌ AQICN API Error: {res_json.get('data', 'Unknown Token Error')}")
+            print(f"❌ AQICN API Error: {res_json.get('data', 'Unknown Token or Station Error')}")
             return None
 
         data = res_json.get("data", {})
