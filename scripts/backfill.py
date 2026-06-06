@@ -58,13 +58,39 @@ def fetch_aqicn_historical(date_str: str) -> dict | None:
     # Fallback: Call AQICN for current data (not historical)
     url = f"https://api.waqi.info/feed/@karachi/"
     resp = requests.get(url, params={"token": AQICN_TOKEN}, timeout=10)
+    
     if resp.status_code == 200:
-        data = resp.json().get("data", {})
-        iaqi = data.get("iaqi", {})
+        try:
+            res_json = resp.json()
+        except ValueError:
+            print(f"❌ API returned invalid format: {resp.text[:100]}")
+            return None
 
-        def sg(k): return float(iaqi.get(k, {}).get("v", 0))
+        # Safe verification that res_json is a dictionary
+        if not isinstance(res_json, dict):
+            print(f"❌ API responded with text payload instead of dictionary: {res_json}")
+            return None
+
+        if res_json.get("status") == "error":
+            print(f"❌ AQICN API Error: {res_json.get('data', 'Unknown Token Error')}")
+            return None
+
+        data = res_json.get("data", {})
+        if not isinstance(data, dict):
+            return None
+
+        iaqi = data.get("iaqi", {})
+        if not isinstance(iaqi, dict):
+            iaqi = {}
+
+        def sg(k): 
+            val = iaqi.get(k, {})
+            if isinstance(val, dict):
+                return float(val.get("v", 0))
+            return float(val) if isinstance(val, (int, float)) else 0.0
+
         return {
-            "AQI": float(data.get("aqi", 0)),
+            "AQI": float(data.get("aqi", 0 or 0.0)),
             "PM2.5": sg("pm25"), "PM10": sg("pm10"),
             "NO2": sg("no2"),    "SO2": sg("so2"),
             "O3": sg("o3"),      "CO": sg("co"),
@@ -185,7 +211,7 @@ def backfill_via_api(start: datetime, end: datetime) -> pd.DataFrame:
     total     = (end - start).days + 1
     processed = 0
 
-    print(f"🗓️  Backfilling {total} days ({start.date()} → {end.date()})...")
+    print(f"🗓️ Backfilling {total} days ({start.date()} → {end.date()})...")
 
     while current <= end:
         print(f"  [{processed+1}/{total}] {current.date()}", end=" ")
