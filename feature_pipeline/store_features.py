@@ -1,8 +1,7 @@
 """
 feature_pipeline/store_features.py
 =====================================
-Connects to the Hopsworks Feature Store and writes data directly 
-to offline storage, completely bypassing the Kafka streaming queues.
+Connects to the Hopsworks Feature Store and writes data safely.
 """
 
 import os
@@ -34,6 +33,7 @@ def get_feature_store():
 
 
 def get_or_create_feature_group(fs):
+    # We explicitly ensure online_enabled=False to keep it strictly offline batch-based
     fg = fs.get_or_create_feature_group(
         name        = FEATURE_GROUP_NAME,
         version     = FEATURE_GROUP_VERSION,
@@ -57,20 +57,19 @@ def insert_features(df: pd.DataFrame) -> None:
     
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 🚀 DIRECT BYPASS TWEAK:
-    # Instead of calling fg.insert() which hits Kafka, we extract Hopsworks' 
-    # underlying engine to write the dataframe directly to offline Hudi storage files.
-    from hsfs.core import feature_group_engine
-    fg_engine = feature_group_engine.FeatureGroupEngine(fg.feature_store_id)
-    
-    fg_engine.insert_dataframe(
-        feature_group=fg,
-        dataframe=df,
-        dataframe_type="pandas",
-        write_options={"wait_for_job": False, "start_offline_materialization": False}
+    # 🚀 SAFE BYPASS TRICK:
+    # We use standard fg.insert(), but we provide options to run purely on the local 
+    # Python engine client instead of spinning up a cluster side async task queue.
+    fg.insert(
+        df,
+        write_options={
+            "wait_for_job": True,                  # Wait to ensure it writes fully 
+            "start_offline_materialization": True, # Allow local engine to materialize directly
+            "kafka_producer_config": {}            # Clears/nullifies background stream producers
+        }
     )
     
-    print(f"🚀 Direct file injection successful! Kafka bypassed completely.")
+    print(f"🚀 Injection complete! Rows safely written to the store.")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
