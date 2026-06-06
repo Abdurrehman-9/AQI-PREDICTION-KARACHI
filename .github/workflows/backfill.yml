@@ -1,0 +1,26 @@
+name: 🗄️ Backfill Historical Data (Run Once)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: pip install -r requirements.txt
+      - name: Run backfill
+        working-directory: scripts
+        env:
+          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
+          OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
+          KARACHI_STATION_ID: "@karachi"
+          KARACHI_LAT: "24.8607"
+          KARACHI_LON: "67.0011"
+        run: python backfill.py
