@@ -55,12 +55,16 @@ def fetch_aqicn_historical(date_str: str) -> dict | None:
         # Return None — the main loop will use the CSV directly
         return None
 
-    # Fetch station config from environment variables
-    station = os.getenv("KARACHI_STATION_ID", "A471613")
+    # Fetch station config from environment variables safely
+    station_env = os.getenv("KARACHI_STATION_ID", "A471613")
+    station = str(station_env).strip().lower()
     
-    # Force generic placeholders to fallback to a verified working station layout
-    if not station or station.strip() in ["@karachi", "karachi"]:
+    # BULLETPROOF FALLBACK: If the secret variable contains 'karachi' or is empty, force the working ID
+    if not station or "karachi" in station:
         station = "A471613"
+    else:
+        # Otherwise use the clean variable string passed from GitHub
+        station = str(station_env).strip()
 
     # Fallback: Call AQICN for current data (not historical)
     url = f"https://api.waqi.info/feed/{station}/"
@@ -75,11 +79,11 @@ def fetch_aqicn_historical(date_str: str) -> dict | None:
 
         # Safe verification that res_json is a dictionary
         if not isinstance(res_json, dict):
-            print(f"❌ API responded with text payload instead of dictionary: {res_json}")
+            print(f"❌ API responded with text payload instead of dictionary")
             return None
 
         if res_json.get("status") == "error":
-            print(f"❌ AQICN API Error: {res_json.get('data', 'Unknown Token or Station Error')}")
+            print(f"❌ AQICN API Error: {res_json.get('data', 'Unknown Station/Token Error')} (Tried Station: {station})")
             return None
 
         data = res_json.get("data", {})
