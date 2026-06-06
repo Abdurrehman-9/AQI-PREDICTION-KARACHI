@@ -325,6 +325,7 @@ def main():
 
     print("=" * 55)
     print("AQI Predictor — 3-Layer Historical Backfill")
+    print(f"  Layer 1 (Kaggle CSV real data):   up to 2025-08-05")
     print("=" * 55)
     print(f"CSV path:       {args.csv}")
     print(f"Synthetic gap:  {gap_start.date()} to {gap_end.date()}")
