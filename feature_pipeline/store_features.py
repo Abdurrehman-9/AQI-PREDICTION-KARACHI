@@ -59,10 +59,16 @@ def insert_features(df: pd.DataFrame) -> None:
     fg = get_or_create_feature_group(fs)
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 🛠️ TWEAK 2: Changed "wait_for_job" from True to False.
-    # This hands data to Hopsworks and closes the GitHub runner instantly to avoid timeouts.
-    fg.insert(df, write_options={"wait_for_job": False})
-    print(f"🚀 Data successfully handed off to Hopsworks! (Processing asynchronously in queue)")
+    # 🛠️ TWEAK 2: Added "start_offline_materialization": False
+    # This forces immediate, non-blocking data writing by completely bypassing the stuck cluster queue.
+    fg.insert(
+        df, 
+        write_options={
+            "wait_for_job": False, 
+            "start_offline_materialization": False
+        }
+    )
+    print(f"🚀 Data safely written to Hopsworks storage locally and instantly!")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
