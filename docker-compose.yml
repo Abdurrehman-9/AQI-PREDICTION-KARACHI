@@ -1,0 +1,89 @@
+# docker-compose.yml
+# ====================
+# Runs the full AQI Predictor stack locally with Docker:
+#   - web_app    → Streamlit dashboard (port 8501)
+#   - api        → FastAPI backend     (port 8000)
+#   - airflow    → Airflow scheduler + webserver (port 8080)
+#
+# Usage:
+#   docker-compose up --build
+#
+# Prerequisites:
+#   - Docker Desktop installed and running
+#   - .env file in the project root (copy from .env.example)
+
+version: "3.9"
+
+services:
+
+  # ── Streamlit Dashboard ────────────────────────────────────────────
+  web_app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.webapp
+    container_name: aqi_webapp
+    ports:
+      - "8501:8501"
+    env_file: .env
+    volumes:
+      - ./models:/app/models        # share trained models
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ── FastAPI Backend ────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.feature
+    container_name: aqi_api
+    command: uvicorn web_app.api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    env_file: .env
+    volumes:
+      - ./models:/app/models
+    restart: unless-stopped
+
+  # ── Airflow Scheduler ──────────────────────────────────────────────
+  airflow-scheduler:
+    image: apache/airflow:2.8.0
+    container_name: aqi_airflow_scheduler
+    command: scheduler
+    env_file: .env
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW_VAR_AQICN_TOKEN=${AQICN_TOKEN}
+      - AIRFLOW_VAR_OWM_API_KEY=${OWM_API_KEY}
+      - AIRFLOW_VAR_HOPSWORKS_API_KEY=${HOPSWORKS_API_KEY}
+      - AIRFLOW_VAR_HOPSWORKS_PROJECT=${HOPSWORKS_PROJECT}
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - .:/opt/airflow/project            # mount project code
+      - airflow_db:/opt/airflow
+    restart: unless-stopped
+
+  # ── Airflow Webserver (UI) ────────────────────────────────────────
+  airflow-webserver:
+    image: apache/airflow:2.8.0
+    container_name: aqi_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - .:/opt/airflow/project
+      - airflow_db:/opt/airflow
+    depends_on:
+      - airflow-scheduler
+    restart: unless-stopped
+
+volumes:
+  airflow_db:
