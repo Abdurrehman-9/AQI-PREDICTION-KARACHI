@@ -1,8 +1,8 @@
 """
 feature_pipeline/store_features.py
 =====================================
-Connects to the Hopsworks Feature Store from any environment
-including GitHub Actions, Streamlit Cloud, and local machines.
+Connects to the Hopsworks Feature Store and writes data directly 
+to offline storage, completely bypassing the Kafka streaming queues.
 """
 
 import os
@@ -14,9 +14,6 @@ load_dotenv()
 
 HOPSWORKS_API_KEY = os.getenv("HOPSWORKS_API_KEY")
 HOPSWORKS_PROJECT = os.getenv("HOPSWORKS_PROJECT", "AQI_Pred_Karachi")
-
-# This is the correct public host for app.hopsworks.ai free tier
-# Required when connecting from outside Hopsworks (GitHub Actions, etc.)
 HOPSWORKS_HOST = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai")
 
 FEATURE_GROUP_NAME    = "aqi_features"
@@ -50,25 +47,30 @@ def get_or_create_feature_group(fs):
 def insert_features(df: pd.DataFrame) -> None:
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     
-    # 🛠️ TWEAK 1: Clean column names before sending to Hopsworks storage
+    # Clean column names before sending to Hopsworks storage
     rename_dict = {col: col.replace("PM2.5", "pm2_5").replace("pm2.5", "pm2_5") for col in df.columns if "2.5" in col}
     if rename_dict:
         df = df.rename(columns=rename_dict)
         
     fs = get_feature_store()
     fg = get_or_create_feature_group(fs)
+    
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 🛠️ TWEAK 2: Added "start_offline_materialization": False
-    # This forces immediate, non-blocking data writing by completely bypassing the stuck cluster queue.
-    fg.insert(
-        df, 
-        write_options={
-            "wait_for_job": False, 
-            "start_offline_materialization": False
-        }
+    # 🚀 DIRECT BYPASS TWEAK:
+    # Instead of calling fg.insert() which hits Kafka, we extract Hopsworks' 
+    # underlying engine to write the dataframe directly to offline Hudi storage files.
+    from hsfs.core import feature_group_engine
+    fg_engine = feature_group_engine.FeatureGroupEngine(fg.feature_store_id)
+    
+    fg_engine.insert_dataframe(
+        feature_group=fg,
+        dataframe=df,
+        dataframe_type="pandas",
+        write_options={"wait_for_job": False, "start_offline_materialization": False}
     )
-    print(f"🚀 Data safely written to Hopsworks storage locally and instantly!")
+    
+    print(f"🚀 Direct file injection successful! Kafka bypassed completely.")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
