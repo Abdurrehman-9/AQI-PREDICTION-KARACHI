@@ -49,11 +49,20 @@ def get_or_create_feature_group(fs):
 
 def insert_features(df: pd.DataFrame) -> None:
     df["timestamp"] = pd.to_datetime(df["timestamp"])
+    
+    # 🛠️ TWEAK 1: Clean column names before sending to Hopsworks storage
+    rename_dict = {col: col.replace("PM2.5", "pm2_5").replace("pm2.5", "pm2_5") for col in df.columns if "2.5" in col}
+    if rename_dict:
+        df = df.rename(columns=rename_dict)
+        
     fs = get_feature_store()
     fg = get_or_create_feature_group(fs)
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
-    fg.insert(df, write_options={"wait_for_job": True})
-    print(f"  Insert complete.")
+    
+    # 🛠️ TWEAK 2: Changed "wait_for_job" from True to False.
+    # This hands data to Hopsworks and closes the GitHub runner instantly to avoid timeouts.
+    fg.insert(df, write_options={"wait_for_job": False})
+    print(f"🚀 Data successfully handed off to Hopsworks! (Processing asynchronously in queue)")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
