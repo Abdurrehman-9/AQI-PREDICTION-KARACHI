@@ -272,6 +272,17 @@ def run_backfill(csv_path: str, synthetic_start: datetime, synthetic_end: dateti
     combined = combined.drop_duplicates(subset=["timestamp"], keep="first")
     combined.reset_index(drop=True, inplace=True)
 
+    # 🛠️ PREEMPTIVE TWEAK: Sanitize column names for Hopsworks feature name limits
+    # Replaces 'PM2.5' or 'pm2.5' with 'pm2_5' to avoid database validation rejections
+    rename_dict = {}
+    for col in combined.columns:
+        if "PM2.5" in col or "pm2.5" in col:
+            rename_dict[col] = col.replace("PM2.5", "pm2_5").replace("pm2.5", "pm2_5")
+            
+    if rename_dict:
+        print(f"  🧹 Sanitizing feature columns for Hopsworks format requirements: {rename_dict}")
+        combined = combined.rename(columns=rename_dict)
+
     print(f"  Total rows after merge + dedup: {len(combined)}")
     print(f"  Date range: {combined['timestamp'].min().date()} "
           f"to {combined['timestamp'].max().date()}")
@@ -320,7 +331,7 @@ def main():
     gap_end = (
         datetime.strptime(args.gap_end, "%Y-%m-%d")
         if args.gap_end
-        else datetime.utcnow() - timedelta(days=1)
+        else datetime.now() - timedelta(days=1)
     )
 
     print("=" * 55)
