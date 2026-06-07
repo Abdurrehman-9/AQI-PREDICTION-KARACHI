@@ -1,0 +1,54 @@
+name: Training Pipeline (Daily)
+
+on:
+  workflow_dispatch: # Allows manual triggers via the green button
+  schedule:
+    - cron: '0 0 * * *' # Matches your DAG exactly: Runs daily at midnight UTC
+
+jobs:
+  train_models:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Project Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy scikit-learn xgboost statsmodels tensorflow prophet hopsworks python-dotenv
+
+      # ─── TASK 1: TRANSLATED FROM AIRFLOW 'check_features' ─────────────────
+      - name: Check Features Available
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
+        run: |
+          python -c "
+          import sys
+          sys.path.insert(0, './feature_pipeline')
+          from store_features import read_features
+          df = read_features()
+          print(f'Available rows: {len(df)}')
+          assert len(df) >= 30, f'Need at least 30 rows for training, got {len(df)}'
+          print('✅ Enough data for training')
+          "
+
+      # ─── TASK 2: TRANSLATED FROM AIRFLOW 'run_training' ──────────────────
+      - name: Run Training Pipeline
+        env:
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
+        run: |
+          cd training_pipeline
+          python train.py
+
+      # ─── TASK 3: TRANSLATED FROM AIRFLOW 'log_completion' ────────────────
+      - name: Log Completion
+        run: echo "✅ Training pipeline completed at $(date -u)"
