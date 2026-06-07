@@ -33,7 +33,6 @@ def get_feature_store():
 
 
 def get_or_create_feature_group(fs):
-    # We explicitly ensure online_enabled=False to keep it strictly offline batch-based
     fg = fs.get_or_create_feature_group(
         name        = FEATURE_GROUP_NAME,
         version     = FEATURE_GROUP_VERSION,
@@ -57,19 +56,18 @@ def insert_features(df: pd.DataFrame) -> None:
     
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 🚀 SAFE BYPASS TRICK:
-    # We use standard fg.insert(), but we provide options to run purely on the local 
-    # Python engine client instead of spinning up a cluster side async task queue.
+    # 🚀 THE OPTIMIZED SETTING:
+    # wait_for_job=False stops GitHub from hanging and timing out.
+    # start_offline_materialization=True tells the cluster to process it.
     fg.insert(
         df,
         write_options={
-            "wait_for_job": True,                  # Wait to ensure it writes fully 
-            "start_offline_materialization": True, # Allow local engine to materialize directly
-            "kafka_producer_config": {}            # Clears/nullifies background stream producers
+            "wait_for_job": False,
+            "start_offline_materialization": True
         }
     )
     
-    print(f"🚀 Injection complete! Rows safely written to the store.")
+    print(f"🚀 Data uploaded successfully! Hopsworks is materializing rows in the background.")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
