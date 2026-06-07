@@ -51,18 +51,20 @@ def insert_features(df: pd.DataFrame) -> None:
     # 2. Standardize column naming to lowercase
     df.columns = df.columns.str.lower()
     
-    # 3. Force explicit numeric types for all columns except timestamp
-    # This prevents the 'AttributeError' caused by single-row object-type inference
-    numeric_cols = [c for c in df.columns if c != "timestamp"]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-        
+    # 3. Robust numeric conversion: 
+    # Select all columns except timestamp, apply to_numeric to the whole subset at once
+    cols_to_convert = df.columns.drop("timestamp")
+    df[cols_to_convert] = df[cols_to_convert].apply(pd.to_numeric, errors='coerce')
+    
+    # 4. Clean up any columns that became entirely NaN
+    df = df.dropna(axis=1, how='all')
+
     fs = get_feature_store()
     fg = get_or_create_feature_group(fs)
     
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 4. Perform the insertion
+    # 5. Perform the insertion
     fg.insert(
         df,
         write_options={
