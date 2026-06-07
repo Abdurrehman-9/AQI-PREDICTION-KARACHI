@@ -3,7 +3,7 @@
 
 ### StreamLit WEB-APP Link: "https://aqi-forecast-karachi-o.streamlit.app/"
 
-#### Kaggle Notebook Link to test the training pipeline only : "[https://aqi-forecast-karachi-o.streamlit.app/](https://www.kaggle.com/code/abdurrehman987t/aqi-forecast-karachi-using-ml-dl-models/notebook)"
+#### Kaggle Notebook Link to test the training pipeline only : "https://www.kaggle.com/code/abdurrehman987t/aqi-forecast-karachi-using-ml-dl-models/notebook" 
 
 > A production-grade MLOps pipeline that ingests live pollution and weather data every hour, engineers features, trains and benchmarks six forecasting models daily, and serves a 3-day AQI forecast for Karachi through an interactive dashboard — entirely automated, containerised, and deployed on free-tier cloud infrastructure.
 
