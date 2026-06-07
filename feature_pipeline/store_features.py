@@ -17,7 +17,6 @@ FEATURE_GROUP_VERSION = 2
 # These must stay as integers — Hopsworks schema requires bigint
 INT_COLS = [
     "hour", "day_of_week", "month", "day_of_year", "is_weekend",
-    "humidity", "wind_deg", "cloud_cover",
 ]
 
 # These must stay as booleans — Hopsworks schema requires boolean
