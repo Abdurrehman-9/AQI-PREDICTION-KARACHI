@@ -45,25 +45,24 @@ def get_or_create_feature_group(fs):
 
 
 def insert_features(df: pd.DataFrame) -> None:
+    # 1. Force the timestamp to standard datetime
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     
-    # Standardize column naming to lowercase to align with compute_features updates
+    # 2. Standardize column naming to lowercase
     df.columns = df.columns.str.lower()
     
-    # Explicit schema mapping catch for variance in PM2.5 tracking names
-    rename_dict = {}
-    for col in df.columns:
-        if "2.5" in col or col == "pm25":
-            rename_dict[col] = "pm25" # Standardizes completely to match feature arrays
-            
-    if rename_dict:
-        df = df.rename(columns=rename_dict)
+    # 3. Force explicit numeric types for all columns except timestamp
+    # This prevents the 'AttributeError' caused by single-row object-type inference
+    numeric_cols = [c for c in df.columns if c != "timestamp"]
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
         
     fs = get_feature_store()
     fg = get_or_create_feature_group(fs)
     
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
+    # 4. Perform the insertion
     fg.insert(
         df,
         write_options={
@@ -72,7 +71,7 @@ def insert_features(df: pd.DataFrame) -> None:
         }
     )
     
-    print(f"🚀 Injection complete! Rows safely written to the Online Store instantly.")
+    print(f"🚀 Injection complete! Rows safely written to the Online Store.")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
@@ -84,8 +83,6 @@ def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
     
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.sort_values("timestamp").reset_index(drop=True)
-    
-    # Ensure read strings are consistently lowercase
     df.columns = df.columns.str.lower()
     
     if start_date:
