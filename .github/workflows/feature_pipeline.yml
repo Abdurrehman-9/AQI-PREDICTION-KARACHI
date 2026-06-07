@@ -1,56 +1,43 @@
-name: Feature Pipeline (Hourly)
+name: ⚡ Feature Pipeline (Hourly)
 
 on:
-  workflow_dispatch: # Allows manual triggers via the green button
   schedule:
-    - cron: '0 * * * *' # Runs hourly on the hour
+    - cron: "0 * * * *"
+  workflow_dispatch:
 
 jobs:
-  run_hourly_pipeline:
+  run-feature-pipeline:
+    name: Fetch & Store Features
     runs-on: ubuntu-latest
-    timeout-minutes: 10 # Prevents the job from hanging indefinitely if GitHub or an API glitches
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: "3.10"
+          cache: "pip"
 
-      - name: Install Project Dependencies
+      - name: Install dependencies
         run: |
-          pip install pandas numpy requests "hopsworks==4.7.*" pyarrow python-dotenv
+          python -m pip install --upgrade pip
+          pip install pandas numpy requests python-dotenv \
+            "hopsworks[python]==4.7.0" \
+            pyarrow>=17.0 \
+            confluent-kafka==2.3.0
 
-      # ─── TASK 1: TRANSLATED FROM AIRFLOW 'health_check' ─────────────────
-      - name: Health Check
+      - name: Run feature pipeline
+        working-directory: feature_pipeline
         env:
-          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
-        run: |
-          echo "Starting AQI Feature Pipeline at $(date -u)"
-          python -c "
-          import requests
-          r = requests.get('https://api.waqi.info/feed/geo:24.8607;67.0011/?token=${{ secrets.AQICN_TOKEN }}')
-          print('AQICN reachable:', r.status_code == 200)
-          "
-
-      # ─── TASK 2: TRANSLATED FROM AIRFLOW 'run_feature_pipeline' ─────────
-      - name: Run Feature Pipeline
-        env:
-          AQICN_TOKEN: ${{ secrets.AQICN_TOKEN }}
-          OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
-          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
-          HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
-          HOPSWORKS_HOST: ${{ secrets.HOPSWORKS_HOST }}
+          AQICN_TOKEN:        ${{ secrets.AQICN_TOKEN }}
+          OWM_API_KEY:        ${{ secrets.OWM_API_KEY }}
+          HOPSWORKS_API_KEY:  ${{ secrets.HOPSWORKS_API_KEY }}
+          HOPSWORKS_PROJECT:  ${{ secrets.HOPSWORKS_PROJECT }}
+          HOPSWORKS_HOST:     ${{ secrets.HOPSWORKS_HOST }}
           KARACHI_STATION_ID: "geo:24.8607;67.0011"
-          KARACHI_LAT: "24.8607"
-          KARACHI_LON: "67.0011"
-        run: |
-          cd feature_pipeline
-          python run_pipeline.py
-
-      # ─── TASK 3: TRANSLATED FROM AIRFLOW 'log_completion' ────────────────
-      - name: Log Completion
-        run: echo "✅ Feature pipeline completed at $(date -u)"
+          KARACHI_LAT:        "24.8607"
+          KARACHI_LON:        "67.0011"
+        run: python run_pipeline.py
