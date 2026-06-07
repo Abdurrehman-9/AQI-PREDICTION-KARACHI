@@ -14,6 +14,17 @@ HOPSWORKS_HOST        = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai"
 FEATURE_GROUP_NAME    = "aqi_features"
 FEATURE_GROUP_VERSION = 2
 
+# Integer columns — must stay as int64, not float
+INT_COLS = [
+    "hour", "day_of_week", "month", "day_of_year", "is_weekend",
+    "humidity", "wind_deg", "cloud_cover",
+]
+
+# Boolean columns — must stay as bool
+BOOL_COLS = [
+    "season_autumn", "season_spring", "season_summer", "season_winter",
+]
+
 
 def get_feature_store():
     print("Connecting to Hopsworks...")
@@ -47,32 +58,38 @@ def insert_features(df: pd.DataFrame) -> None:
     # Step 2 — lowercase all column names
     df.columns = [c.lower() for c in df.columns]
 
-    # Step 3 — convert each column to numeric safely, skip broken ones
-    scalar_cols = ["timestamp"]
+    # Step 3 — fix integer columns
+    for col in INT_COLS:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype("int64")
+
+    # Step 4 — fix boolean columns
+    for col in BOOL_COLS:
+        if col in df.columns:
+            df[col] = df[col].fillna(False).astype(bool)
+        else:
+            # Add missing season column as False if not present
+            df[col] = False
+
+    # Step 5 — convert remaining non-timestamp, non-int, non-bool columns to float
+    skip = ["timestamp"] + INT_COLS + BOOL_COLS
     for col in df.columns:
-        if col == "timestamp":
+        if col in skip:
             continue
-        try:
-            df[col] = df[col].astype(str).apply(
-                lambda x: float(x) if x not in ["nan", "None", "none", ""] else float("nan")
-            )
-            scalar_cols.append(col)
-        except Exception:
-            print(f"  Skipping column '{col}' — not convertible")
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df[scalar_cols]
-
-    # Step 4 — drop columns that are entirely NaN
+    # Step 6 — drop columns entirely NaN
     df = df.dropna(axis=1, how="all")
 
-    # Step 5 — drop rows missing the main target
+    # Step 7 — drop rows missing aqi
     if "aqi" in df.columns:
         df = df.dropna(subset=["aqi"])
 
     print(f"  Inserting {len(df)} rows | {len(df.columns)} columns")
+    print(f"  Dtypes sample: { {c: str(df[c].dtype) for c in list(df.columns)[:6]} }")
 
-    fs  = get_feature_store()
-    fg  = get_or_create_feature_group(fs)
+    fs = get_feature_store()
+    fg = get_or_create_feature_group(fs)
 
     fg.insert(
         df,
