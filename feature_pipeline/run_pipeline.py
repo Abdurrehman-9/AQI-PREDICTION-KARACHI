@@ -6,14 +6,12 @@ Orchestrates the full feature pipeline:
   2. Compute features
   3. Store in Hopsworks Feature Store
 
-This script is run:
-  - Every hour via GitHub Actions
-  - Every hour via Airflow DAG
+Run every hour via GitHub Actions.
 """
 
 import pandas as pd
 from fetch_data import get_raw_reading
-from compute_features import compute_features_single, compute_features_df
+from compute_features import compute_features_single, compute_features_df, FEATURE_COLS, TARGET_COLS
 from store_features import read_latest_features, insert_features
 
 
@@ -26,41 +24,60 @@ def run():
     print("\n[1/3] Fetching raw data from APIs...")
     raw = get_raw_reading()
 
-    # ── Step 2: Compute features for the new row ────────────
+    # ── Step 2: Compute features ────────────────────────────
     print("\n[2/3] Computing features...")
     new_row = compute_features_single(raw)
 
-    # To compute lag/rolling features, we need to prepend
-    # recent history from the Feature Store
     print("      Loading recent history for lag computation...")
     try:
         history_df = read_latest_features(n=10)
-        # Drop target columns if present (they won't be in live data)
-        for col in ["aqi_t1", "aqi_t2", "aqi_t3", "AQI_t1", "AQI_t2", "AQI_t3"]:
-            if col in history_df.columns:
-                history_df.drop(columns=[col], inplace=True)
+        # Keep only the columns we need — avoids duplicate column issues
+        keep = ["timestamp", "aqi"] + FEATURE_COLS
+        keep = [c for c in keep if c in history_df.columns]
+        history_df = history_df[keep].copy()
     except Exception as e:
-        print(f"      ⚠️  Could not load history (first run?): {e}")
+        print(f"      Could not load history (first run?): {e}")
         history_df = pd.DataFrame()
 
-    # Combine history + new row, ensuring column names match lowercase
+    # Build new row as DataFrame — lowercase everything immediately
     new_df = pd.DataFrame([new_row])
-    new_df.columns = new_df.columns.str.lower() # ◄── Normalizes your live uppercase keys to match Hopsworks!
-    
-    if not history_df.empty:
-        history_df.columns = history_df.columns.str.lower()
+    new_df.columns = [c.lower() for c in new_df.columns]
 
+    # Rename AQI to aqi if present (from compute_features_single)
+    if "aqi" not in new_df.columns and "AQI" in new_df.columns:
+        new_df.rename(columns={"AQI": "aqi"}, inplace=True)
+
+    # Drop columns that only exist in history (targets etc)
+    for col in TARGET_COLS + ["aqi_t1", "aqi_t2", "aqi_t3"]:
+        if col in new_df.columns:
+            new_df.drop(columns=[col], inplace=True)
+        if not history_df.empty and col in history_df.columns:
+            history_df.drop(columns=[col], inplace=True)
+
+    # Align columns between history and new row before concat
+    if not history_df.empty:
+        history_df.columns = [c.lower() for c in history_df.columns]
+        # Only keep columns that exist in both
+        common_cols = [c for c in history_df.columns if c in new_df.columns]
+        history_df  = history_df[common_cols]
+        new_df      = new_df[common_cols]
+
+    # Combine and compute lag features
     combined = pd.concat([history_df, new_df], ignore_index=True)
+
+    # Remove any duplicate columns before feature engineering
+    combined = combined.loc[:, ~combined.columns.duplicated()]
+
     enriched = compute_features_df(combined)
 
-    # Enforce lowercase on engineered features to guarantee lookups match
-    enriched.columns = enriched.columns.str.lower()
+    # Remove duplicate columns again after engineering (safety)
+    enriched = enriched.loc[:, ~enriched.columns.duplicated()]
 
-    # We only want to store the NEW row (the last one after enrichment)
+    # Take only the last row — the new one
     latest = enriched.tail(1).reset_index(drop=True)
-    
-    # ◄── Debug values switched to lowercase to keep Pandas happy
-    print(f"      New feature row: {latest[['timestamp', 'aqi', 'aqi_lag_1', 'aqi_diff']].to_dict('records')}")
+
+    print(f"      New feature row: "
+          f"{latest[['timestamp', 'aqi', 'aqi_lag_1', 'aqi_diff']].to_dict('records')}")
 
     # ── Step 3: Store in Feature Store ─────────────────────
     print("\n[3/3] Storing features in Hopsworks Feature Store...")
