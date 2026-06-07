@@ -1,7 +1,8 @@
 """
 feature_pipeline/store_features.py
 =====================================
-Connects to the Hopsworks Feature Store and writes data safely.
+Connects to the Hopsworks Feature Store and utilizes the instant 
+Online Store to completely bypass background server queues.
 """
 
 import os
@@ -16,7 +17,8 @@ HOPSWORKS_PROJECT = os.getenv("HOPSWORKS_PROJECT", "AQI_Pred_Karachi")
 HOPSWORKS_HOST = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai")
 
 FEATURE_GROUP_NAME    = "aqi_features"
-FEATURE_GROUP_VERSION = 1
+# 💡 BUMPED TO VERSION 2: Tells Hopsworks to spin up a clean, online-enabled group
+FEATURE_GROUP_VERSION = 2
 
 
 def get_feature_store():
@@ -33,12 +35,13 @@ def get_feature_store():
 
 
 def get_or_create_feature_group(fs):
+    # 🔥 FIX FOR PROBLEM 2: Setting online_enabled=True forces instant database entry
     fg = fs.get_or_create_feature_group(
         name        = FEATURE_GROUP_NAME,
         version     = FEATURE_GROUP_VERSION,
         primary_key = ["timestamp"],
         description = "Hourly AQI + weather features for Karachi",
-        online_enabled = False,
+        online_enabled = True, 
     )
     return fg
 
@@ -56,32 +59,37 @@ def insert_features(df: pd.DataFrame) -> None:
     
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 🚀 THE OPTIMIZED SETTING:
-    # wait_for_job=False stops GitHub from hanging and timing out.
-    # start_offline_materialization=True tells the cluster to process it.
+    # 🚀 THE BULLETPROOF SETTING:
+    # wait_for_job=False ensures GitHub doesn't hang.
+    # Because online_enabled=True, data drops into RonDB instantly.
     fg.insert(
         df,
         write_options={
             "wait_for_job": False,
-            "start_offline_materialization": True
+            "start_offline_materialization": True # The offline sync can happen slowly whenever the server gets around to it
         }
     )
     
-    print(f"🚀 Data uploaded successfully! Hopsworks is materializing rows in the background.")
+    print(f"🚀 Injection complete! Rows safely written to the Online Store instantly.")
 
 
 def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
     fs = get_feature_store()
     fg = get_or_create_feature_group(fs)
-    print(f"  Reading features from '{FEATURE_GROUP_NAME}'...")
-    df = fg.read()
+    print(f"  Reading features from '{FEATURE_GROUP_NAME}' Online DB...")
+    
+    # 🔥 BYPASS QUEUE ON READ:
+    # Setting online=True reads the data instantly from the live database table,
+    # completely ignoring whether the background Spark materialization job is done.
+    df = fg.read(online=True)
+    
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.sort_values("timestamp").reset_index(drop=True)
     if start_date:
         df = df[df["timestamp"] >= pd.Timestamp(start_date)]
     if end_date:
         df = df[df["timestamp"] <= pd.Timestamp(end_date)]
-    print(f"  Read {len(df)} rows.")
+    print(f"  Read {len(df)} rows from Online Store.")
     return df
 
 
