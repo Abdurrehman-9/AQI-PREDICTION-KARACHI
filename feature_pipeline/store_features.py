@@ -8,9 +8,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-HOPSWORKS_API_KEY  = os.getenv("HOPSWORKS_API_KEY")
-HOPSWORKS_PROJECT  = os.getenv("HOPSWORKS_PROJECT", "AQI_Pred_Karachi")
-HOPSWORKS_HOST     = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai")
+HOPSWORKS_API_KEY     = os.getenv("HOPSWORKS_API_KEY")
+HOPSWORKS_PROJECT     = os.getenv("HOPSWORKS_PROJECT", "AQI_Pred_Karachi")
+HOPSWORKS_HOST        = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai")
 FEATURE_GROUP_NAME    = "aqi_features"
 FEATURE_GROUP_VERSION = 2
 
@@ -39,34 +39,45 @@ def get_or_create_feature_group(fs):
 
 
 def insert_features(df: pd.DataFrame) -> None:
-    # Step 1 — fix timestamp
     df = df.copy()
+
+    # Step 1 — fix timestamp
     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
     # Step 2 — lowercase all column names
     df.columns = [c.lower() for c in df.columns]
 
-    # Step 3 — convert numeric columns one by one (safe, no shape mismatch)
+    # Step 3 — convert each column to numeric safely, skip broken ones
+    scalar_cols = ["timestamp"]
     for col in df.columns:
         if col == "timestamp":
             continue
-        df[col] = pd.to_numeric(df[col], errors="coerce")
+        try:
+            df[col] = df[col].astype(str).apply(
+                lambda x: float(x) if x not in ["nan", "None", "none", ""] else float("nan")
+            )
+            scalar_cols.append(col)
+        except Exception:
+            print(f"  Skipping column '{col}' — not convertible")
+
+    df = df[scalar_cols]
 
     # Step 4 — drop columns that are entirely NaN
     df = df.dropna(axis=1, how="all")
 
-    # Step 5 — drop rows with NaN in critical columns
-    df = df.dropna(subset=["aqi"])
+    # Step 5 — drop rows missing the main target
+    if "aqi" in df.columns:
+        df = df.dropna(subset=["aqi"])
 
-    print(f"  Inserting {len(df)} rows | columns: {list(df.columns)}")
+    print(f"  Inserting {len(df)} rows | {len(df.columns)} columns")
 
-    fs = get_feature_store()
-    fg = get_or_create_feature_group(fs)
+    fs  = get_feature_store()
+    fg  = get_or_create_feature_group(fs)
 
     fg.insert(
         df,
         write_options={
-            "wait_for_job":                 False,
+            "wait_for_job":                  False,
             "start_offline_materialization": True,
         }
     )
