@@ -10,14 +10,6 @@ IMPORTANT — Column naming rules:
   - no dots (PM2.5 becomes pm25)
   - only letters, numbers, underscores
   - must start with a letter
-
-Features generated:
-  - Time-based: hour, day_of_week, month, is_weekend, season
-  - Lag features: aqi_lag_1, aqi_lag_2, aqi_lag_3
-  - Change rate: aqi_diff (AQI today - AQI yesterday)
-  - Rolling: aqi_rolling_mean_3, aqi_rolling_std_3
-  - Pollutant ratios
-  - Weather features
 """
 
 import pandas as pd
@@ -128,43 +120,46 @@ def compute_features_df(df: pd.DataFrame) -> pd.DataFrame:
 
     All column names are lowercase — required by Hopsworks.
     """
+    df = df.copy()
+    df.columns = df.columns.str.lower() # Double down on lowercase compatibility
     df = df.sort_values("timestamp").reset_index(drop=True)
 
-    # Lag features (all lowercase)
-    df["aqi_lag_1"] = df["AQI"].shift(1)
-    df["aqi_lag_2"] = df["AQI"].shift(2)
-    df["aqi_lag_3"] = df["AQI"].shift(3)
+    # Lag features (all lowercase lookup)
+    df["aqi_lag_1"] = df["aqi"].shift(1)
+    df["aqi_lag_2"] = df["aqi"].shift(2)
+    df["aqi_lag_3"] = df["aqi"].shift(3)
 
     # AQI change rate (1-step difference)
-    df["aqi_diff"] = df["AQI"].diff(1)
+    df["aqi_diff"] = df["aqi"].diff(1)
 
     # Rolling statistics (window=3)
-    df["aqi_rolling_mean_3"] = df["AQI"].rolling(3).mean()
-    df["aqi_rolling_std_3"]  = df["AQI"].rolling(3).std()
+    df["aqi_rolling_mean_3"] = df["aqi"].rolling(3).mean()
+    df["aqi_rolling_std_3"]  = df["aqi"].rolling(3).std()
 
     # Target columns for 3-day ahead prediction (all lowercase)
-    df["aqi_t1"] = df["AQI"].shift(-1)   # next day AQI
-    df["aqi_t2"] = df["AQI"].shift(-2)   # day after
-    df["aqi_t3"] = df["AQI"].shift(-3)   # 3 days ahead
+    df["aqi_t1"] = df["aqi"].shift(-1)   # next day AQI
+    df["aqi_t2"] = df["aqi"].shift(-2)   # day after
+    df["aqi_t3"] = df["aqi"].shift(-3)   # 3 days ahead
 
-    # One-hot encode season (values are already lowercase: winter/spring/summer/autumn)
-    season_dummies = pd.get_dummies(df["season"], prefix="season")
-    # Ensure all 4 season columns always exist even if season not in data
-    for col in ["season_winter", "season_spring", "season_summer", "season_autumn"]:
-        if col not in season_dummies.columns:
-            season_dummies[col] = 0
-    df = pd.concat([df, season_dummies], axis=1)
-    df.drop(columns=["season"], inplace=True)
+    # One-hot encode season
+    if "season" in df.columns:
+        season_dummies = pd.get_dummies(df["season"], prefix="season")
+        for col in ["season_winter", "season_spring", "season_summer", "season_autumn"]:
+            if col not in season_dummies.columns:
+                season_dummies[col] = 0
+        df = pd.concat([df, season_dummies], axis=1)
+        df.drop(columns=["season"], inplace=True)
 
-    # Drop rows with NaN lags (first 3 rows) or NaN targets (last 3 rows)
-    df.dropna(subset=[
-        "aqi_lag_1", "aqi_lag_2", "aqi_lag_3",
-        "aqi_t1",    "aqi_t2",    "aqi_t3"
-    ], inplace=True)
+    # ─── CRITICAL LIVE/TRAINING SEPARATION ──────────────────────────────────
+    # Always drop rows where your look-back features are NaN (first 3 rows)
+    df.dropna(subset=["aqi_lag_1", "aqi_lag_2", "aqi_lag_3"], inplace=True)
+    
+    # Only drop NaN target values if we are running historical backfills/training.
+    # If there's only a single modern row without future targets, do NOT drop it!
+    if len(df) > 1:
+        df.dropna(subset=["aqi_t1", "aqi_t2", "aqi_t3"], inplace=True)
+        
     df.reset_index(drop=True, inplace=True)
-
-    # Lowercase the AQI column name to satisfy Hopsworks
-    df.rename(columns={"AQI": "aqi"}, inplace=True)
 
     # Drop string column that Hopsworks can't store easily
     if "aqi_category" in df.columns:
@@ -175,8 +170,6 @@ def compute_features_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ─── Feature column definitions ─────────────────────────────────────────────
-# All lowercase — matches Hopsworks storage column names exactly
-
 FEATURE_COLS = [
     "hour", "day_of_week", "month", "day_of_year", "is_weekend",
     "pm25", "pm10", "no2", "so2", "o3", "co",
