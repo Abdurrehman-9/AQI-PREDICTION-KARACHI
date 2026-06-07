@@ -32,7 +32,7 @@ jobs:
           echo "Starting AQI Feature Pipeline at $(date -u)"
           python -c "
           import requests
-          r = requests.get('https://api.waqi.info/feed/@karachi/?token=${{ secrets.AQICN_TOKEN }}')
+          r = requests.get('https://api.waqi.info/feed/A471613/?token=${{ secrets.AQICN_TOKEN }}')
           print('AQICN reachable:', r.status_code == 200)
           "
 
@@ -44,7 +44,7 @@ jobs:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
           HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
           HOPSWORKS_HOST: ${{ secrets.HOPSWORKS_HOST }}
-          KARACHI_STATION_ID: "@karachi"
+          KARACHI_STATION_ID: "A471613"
           KARACHI_LAT: "24.8607"
           KARACHI_LON: "67.0011"
         run: |
