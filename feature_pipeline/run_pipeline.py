@@ -36,21 +36,31 @@ def run():
     try:
         history_df = read_latest_features(n=10)
         # Drop target columns if present (they won't be in live data)
-        for col in ["AQI_t1", "AQI_t2", "AQI_t3"]:
+        for col in ["aqi_t1", "aqi_t2", "aqi_t3", "AQI_t1", "AQI_t2", "AQI_t3"]:
             if col in history_df.columns:
                 history_df.drop(columns=[col], inplace=True)
     except Exception as e:
         print(f"      ⚠️  Could not load history (first run?): {e}")
         history_df = pd.DataFrame()
 
-    # Combine history + new row, then recompute time-series features
-    new_df  = pd.DataFrame([new_row])
+    # Combine history + new row, ensuring column names match lowercase
+    new_df = pd.DataFrame([new_row])
+    new_df.columns = new_df.columns.str.lower() # ◄── Normalizes your live uppercase keys to match Hopsworks!
+    
+    if not history_df.empty:
+        history_df.columns = history_df.columns.str.lower()
+
     combined = pd.concat([history_df, new_df], ignore_index=True)
     enriched = compute_features_df(combined)
 
+    # Enforce lowercase on engineered features to guarantee lookups match
+    enriched.columns = enriched.columns.str.lower()
+
     # We only want to store the NEW row (the last one after enrichment)
     latest = enriched.tail(1).reset_index(drop=True)
-    print(f"      New feature row: {latest[['timestamp', 'AQI', 'AQI_lag_1', 'AQI_diff']].to_dict('records')}")
+    
+    # ◄── Debug values switched to lowercase to keep Pandas happy
+    print(f"      New feature row: {latest[['timestamp', 'aqi', 'aqi_lag_1', 'aqi_diff']].to_dict('records')}")
 
     # ── Step 3: Store in Feature Store ─────────────────────
     print("\n[3/3] Storing features in Hopsworks Feature Store...")
