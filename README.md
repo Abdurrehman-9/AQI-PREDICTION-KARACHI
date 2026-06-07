@@ -334,7 +334,7 @@ docker-compose down   # stop all services
 
 ---
 
-## Resume Entry (suggested wording)
+## Resume Entry 
 
 **Karachi AQI Predictor** · Personal Project · Python · MLOps
 
