@@ -17,7 +17,6 @@ HOPSWORKS_PROJECT = os.getenv("HOPSWORKS_PROJECT", "AQI_Pred_Karachi")
 HOPSWORKS_HOST = os.getenv("HOPSWORKS_HOST", "eu-west.cloud.hopsworks.ai")
 
 FEATURE_GROUP_NAME    = "aqi_features"
-# 💡 BUMPED TO VERSION 2: Tells Hopsworks to spin up a clean, online-enabled group
 FEATURE_GROUP_VERSION = 2
 
 
@@ -35,7 +34,6 @@ def get_feature_store():
 
 
 def get_or_create_feature_group(fs):
-    # 🔥 FIX FOR PROBLEM 2: Setting online_enabled=True forces instant database entry
     fg = fs.get_or_create_feature_group(
         name        = FEATURE_GROUP_NAME,
         version     = FEATURE_GROUP_VERSION,
@@ -49,8 +47,15 @@ def get_or_create_feature_group(fs):
 def insert_features(df: pd.DataFrame) -> None:
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     
-    # Clean column names before sending to Hopsworks storage
-    rename_dict = {col: col.replace("PM2.5", "pm2_5").replace("pm2.5", "pm2_5") for col in df.columns if "2.5" in col}
+    # Standardize column naming to lowercase to align with compute_features updates
+    df.columns = df.columns.str.lower()
+    
+    # Explicit schema mapping catch for variance in PM2.5 tracking names
+    rename_dict = {}
+    for col in df.columns:
+        if "2.5" in col or col == "pm25":
+            rename_dict[col] = "pm25" # Standardizes completely to match feature arrays
+            
     if rename_dict:
         df = df.rename(columns=rename_dict)
         
@@ -59,14 +64,11 @@ def insert_features(df: pd.DataFrame) -> None:
     
     print(f"  Inserting {len(df)} rows into '{FEATURE_GROUP_NAME}'...")
     
-    # 🚀 THE BULLETPROOF SETTING:
-    # wait_for_job=False ensures GitHub doesn't hang.
-    # Because online_enabled=True, data drops into RonDB instantly.
     fg.insert(
         df,
         write_options={
             "wait_for_job": False,
-            "start_offline_materialization": True # The offline sync can happen slowly whenever the server gets around to it
+            "start_offline_materialization": True 
         }
     )
     
@@ -78,13 +80,14 @@ def read_features(start_date: str = None, end_date: str = None) -> pd.DataFrame:
     fg = get_or_create_feature_group(fs)
     print(f"  Reading features from '{FEATURE_GROUP_NAME}' Online DB...")
     
-    # 🔥 BYPASS QUEUE ON READ:
-    # Setting online=True reads the data instantly from the live database table,
-    # completely ignoring whether the background Spark materialization job is done.
     df = fg.read(online=True)
     
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.sort_values("timestamp").reset_index(drop=True)
+    
+    # Ensure read strings are consistently lowercase
+    df.columns = df.columns.str.lower()
+    
     if start_date:
         df = df[df["timestamp"] >= pd.Timestamp(start_date)]
     if end_date:
