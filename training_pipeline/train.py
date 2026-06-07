@@ -8,7 +8,7 @@ AQI is a continuous variable (e.g. 145.3, 89.0, 212.7).
 We predict its value 1, 2, and 3 days ahead.
 All models here are regressors. All metrics are regression metrics.
 
-Targets  : AQI_t1 (day+1), AQI_t2 (day+2), AQI_t3 (day+3)  — continuous floats
+Targets  : aqi_t1 (day+1), aqi_t2 (day+2), aqi_t3 (day+3)  — continuous floats
 Metrics  : RMSE, MAE, R²   (regression metrics — correct for this problem)
 Loss fns : MSE / Huber      (regression losses  — correct for this problem)
 
@@ -117,11 +117,6 @@ def split_data(df: pd.DataFrame, test_days: int = 90):
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL 1 — Ridge Regression  (linear baseline)
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Ridge is a linear regressor with L2 regularisation.
-# It maps: X (features) -> y_hat (continuous AQI)
-# Loss used internally: MSE + lambda*||w||^2   (regression loss — correct)
-# We standardise inputs because Ridge is scale-sensitive.
 
 def train_ridge(X_train, X_test, Y_train, Y_test) -> dict:
     print("\n  -- Model 1: Ridge Regression --")
@@ -129,7 +124,6 @@ def train_ridge(X_train, X_test, Y_train, Y_test) -> dict:
     Xtr_s  = scaler.fit_transform(X_train)
     Xte_s  = scaler.transform(X_test)
 
-    # MultiOutputRegressor wraps Ridge to handle 3 targets simultaneously
     model  = MultiOutputRegressor(Ridge(alpha=1.0))
     model.fit(Xtr_s, Y_train)
 
@@ -148,11 +142,6 @@ def train_ridge(X_train, X_test, Y_train, Y_test) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL 2 — Random Forest  (tree ensemble / bagging)
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Builds many decision trees on random subsets of data+features, averages them.
-# Handles non-linearity and feature interactions well.
-# Loss used internally: MSE at each split   (regression — correct)
-# No feature scaling needed (trees are scale-invariant).
 
 def train_random_forest(X_train, X_test, Y_train, Y_test) -> dict:
     print("\n  -- Model 2: Random Forest --")
@@ -163,7 +152,7 @@ def train_random_forest(X_train, X_test, Y_train, Y_test) -> dict:
         random_state      = 42,
         n_jobs            = -1,
     )
-    model.fit(X_train, Y_train)   # RF natively supports multi-output
+    model.fit(X_train, Y_train)
 
     Y_pred  = model.predict(X_test)
     metrics = evaluate_all_targets(Y_test, Y_pred, "RandomForest")
@@ -180,10 +169,6 @@ def train_random_forest(X_train, X_test, Y_train, Y_test) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL 3 — XGBoost  (gradient boosting)
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Builds trees sequentially; each tree corrects the residuals of the previous.
-# Typically the most accurate tabular model.
-# Loss used internally: MSE (reg:squarederror)   (regression — correct)
 
 def train_xgboost(X_train, X_test, Y_train, Y_test) -> dict:
     print("\n  -- Model 3: XGBoost --")
@@ -193,7 +178,6 @@ def train_xgboost(X_train, X_test, Y_train, Y_test) -> dict:
         print("  XGBoost not installed. Run: pip install xgboost")
         return None
 
-    # XGBoost does not natively support multi-output, so we wrap it
     model = MultiOutputRegressor(
         XGBRegressor(
             n_estimators     = 300,
@@ -201,7 +185,7 @@ def train_xgboost(X_train, X_test, Y_train, Y_test) -> dict:
             max_depth        = 6,
             subsample        = 0.8,
             colsample_bytree = 0.8,
-            objective        = "reg:squarederror",   # MSE loss — regression
+            objective        = "reg:squarederror",
             random_state     = 42,
             verbosity        = 0,
         )
@@ -223,22 +207,6 @@ def train_xgboost(X_train, X_test, Y_train, Y_test) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL 4 — SARIMA  (Seasonal ARIMA)
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Statistical time-series model.
-# ARIMA = AutoRegressive Integrated Moving Average
-# SARIMA adds Seasonal terms (S) — important for AQI (weekly + annual cycles).
-#
-# Trained separately for each target horizon (t+1, t+2, t+3).
-# Uses only the AQI series itself (univariate).
-# Produces continuous float forecasts — regression.
-#
-# order=(p,d,q):
-#   p=1  autoregressive:   uses 1 past value
-#   d=1  differencing:     subtracts previous value to make series stationary
-#   q=1  moving average:   uses 1 past forecast error
-# seasonal_order=(P,D,Q,s):
-#   s=7  weekly season (7 days)
-#   P,D,Q mirror p,d,q but for the seasonal component
 
 def train_sarima(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
     print("\n  -- Model 4: SARIMA --")
@@ -248,7 +216,8 @@ def train_sarima(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
         print("  statsmodels not installed. Run: pip install statsmodels")
         return None
 
-    aqi_train = train_df["AQI"].values.astype(float)
+    # Fixed: Changed from uppercase "AQI" to lowercase "aqi" to align with Hopsworks schemas
+    aqi_train = train_df["aqi"].values.astype(float)
     n_test    = len(test_df)
 
     order          = (1, 1, 1)
@@ -277,7 +246,7 @@ def train_sarima(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
             print("done")
         except Exception as e:
             print(f"failed: {e}")
-            Y_pred_all[:, i] = aqi_train[-1]   # naive fallback
+            Y_pred_all[:, i] = aqi_train[-1]
 
     metrics = evaluate_all_targets(Y_true_all, Y_pred_all, "SARIMA")
 
@@ -293,17 +262,6 @@ def train_sarima(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL 5 — LSTM  (Long Short-Term Memory)
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Recurrent deep learning model that learns from sequences.
-# Input : sliding window of last SEQ_LEN timesteps of all features
-# Output: [AQI_t1, AQI_t2, AQI_t3]  — 3 continuous float values
-#
-# Loss function   : MSE (mean_squared_error)  — regression loss, correct
-# Output activation: linear                  — regression output, correct
-#
-# NOTE: If this were a classification problem (predicting AQI category),
-#   the output layer would use softmax activation and the loss would be
-#   categorical_crossentropy. We do NOT use those here.
 
 def train_lstm(X_train, X_test, Y_train, Y_test) -> dict:
     print("\n  -- Model 5: LSTM --")
@@ -317,9 +275,8 @@ def train_lstm(X_train, X_test, Y_train, Y_test) -> dict:
         print("  TensorFlow not installed. Run: pip install tensorflow")
         return None
 
-    SEQ_LEN = 14   # use last 14 days as context window
+    SEQ_LEN = 14
 
-    # Scale features and targets to zero-mean, unit-variance
     scaler_X = StandardScaler()
     scaler_Y = StandardScaler()
 
@@ -344,9 +301,8 @@ def train_lstm(X_train, X_test, Y_train, Y_test) -> dict:
     X_te_seq, Y_te_seq = make_sequences(X_te_s, Y_te_s, SEQ_LEN)
 
     n_features = X_tr_seq.shape[2]
-    n_outputs  = Y_tr_seq.shape[1]   # = 3
+    n_outputs  = Y_tr_seq.shape[1]
 
-    # Architecture: two stacked LSTM layers -> Dense regression head
     model = Sequential([
         LSTM(128, return_sequences=True, input_shape=(SEQ_LEN, n_features)),
         Dropout(0.2),
@@ -354,10 +310,9 @@ def train_lstm(X_train, X_test, Y_train, Y_test) -> dict:
         LSTM(64, return_sequences=False),
         Dropout(0.2),
         Dense(32, activation="relu"),
-        Dense(n_outputs, activation="linear"),   # linear = continuous regression output
+        Dense(n_outputs, activation="linear"),
     ])
 
-    # MSE loss for regression. Would be categorical_crossentropy for classification.
     model.compile(
         optimizer = Adam(learning_rate=1e-3),
         loss      = "mse",
@@ -382,7 +337,6 @@ def train_lstm(X_train, X_test, Y_train, Y_test) -> dict:
     best_epoch = int(np.argmin(history.history["val_loss"])) + 1
     print(f"    Stopped at epoch {best_epoch}  (best val_loss = {min(history.history['val_loss']):.4f})")
 
-    # Inverse-scale predictions back to original AQI range
     Y_pred_s = model.predict(X_te_seq, verbose=0)
     Y_pred   = scaler_Y.inverse_transform(Y_pred_s)
     Y_true   = scaler_Y.inverse_transform(Y_te_seq)
@@ -421,12 +375,6 @@ def _plot_lstm_loss(history, out_dir: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODEL 6 — Prophet
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# Facebook/Meta's additive regression model for time series.
-# Decomposes the series into: trend + yearly seasonality + weekly seasonality
-#   + weather regressors.
-# All outputs are continuous floats — regression.
-# Trained separately for each target horizon.
 
 def train_prophet(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
     print("\n  -- Model 6: Prophet --")
@@ -447,10 +395,10 @@ def train_prophet(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
         horizon = i + 1
         print(f"    Training Prophet for {target} (horizon={horizon})...", end=" ")
 
-        # Prophet requires columns named 'ds' (datetime) and 'y' (value to forecast)
         train_p = train_df[["timestamp"] + REGRESSORS].copy()
         train_p.rename(columns={"timestamp": "ds"}, inplace=True)
-        train_p["y"] = train_df["AQI"].values
+        # Fixed: Changed from uppercase "AQI" to lowercase "aqi" to align with Hopsworks schemas
+        train_p["y"] = train_df["aqi"].values
 
         m = Prophet(
             yearly_seasonality      = True,
@@ -467,7 +415,6 @@ def train_prophet(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
         future.rename(columns={"timestamp": "ds"}, inplace=True)
         forecast = m.predict(future)
 
-        # yhat = continuous AQI prediction
         Y_pred_all[:, i]  = forecast["yhat"].values
         prophet_models[target] = m
         print("done")
@@ -488,7 +435,7 @@ def train_prophet(train_df: pd.DataFrame, test_df: pd.DataFrame) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def save_model(name: str, result: dict) -> str:
-    slug      = name.lower().replace(" ", "_")
+    slug = name.lower().replace(" ", "_")
     model_dir = os.path.join(OUTPUT_DIR, slug)
     os.makedirs(model_dir, exist_ok=True)
     mtype = result["type"]
@@ -530,10 +477,11 @@ def register_in_hopsworks(model_name: str, model_dir: str, metrics: dict):
         model = mr.python.create_model(
             name        = f"aqi_{model_name.lower().replace(' ', '_')}",
             description = f"AQI 3-day regression model: {model_name}",
+            # Fixed: Changed keys from uppercase "AQI_t1" to lowercase "aqi_t1"
             metrics = {
                 "avg_rmse": round(metrics.get("avg_rmse", 0), 3),
-                "rmse_t1":  round(metrics.get("AQI_t1", {}).get("rmse", 0), 3),
-                "r2_t1":    round(metrics.get("AQI_t1", {}).get("r2",   0), 4),
+                "rmse_t1":  round(metrics.get("aqi_t1", {}).get("rmse", 0), 3),
+                "r2_t1":    round(metrics.get("aqi_t1", {}).get("r2",   0), 4),
             },
         )
         model.save(model_dir)
@@ -601,7 +549,7 @@ def generate_shap(model, X_test: np.ndarray, model_name: str):
 
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.barh(shap_df["feature"][::-1], shap_df["importance"][::-1], color="steelblue")
-        ax.set_title(f"SHAP Feature Importance — {model_name} (AQI_t1)")
+        ax.set_title(f"SHAP Feature Importance — {model_name} (aqi_t1)")
         ax.set_xlabel("Mean |SHAP value|")
         plt.tight_layout()
         path = os.path.join(OUTPUT_DIR, f"{model_name.lower()}_shap.png")
@@ -620,7 +568,7 @@ def generate_shap(model, X_test: np.ndarray, model_name: str):
 def main():
     print("=" * 60)
     print("AQI Training Pipeline  |  Problem type: REGRESSION")
-    print("Targets : AQI_t1, AQI_t2, AQI_t3  (continuous floats)")
+    print("Targets : aqi_t1, aqi_t2, aqi_t3  (continuous floats)")
     print("Metrics : RMSE, MAE, R2  (regression metrics)")
     print("=" * 60)
 
@@ -654,10 +602,11 @@ def main():
     print("  " + "-" * 57)
     for name, res in all_results.items():
         m   = res["metrics"]
-        r1  = m["AQI_t1"]["rmse"]
-        r2  = m["AQI_t2"]["rmse"]
-        r3  = m["AQI_t3"]["rmse"]
-        r2v = m["AQI_t1"]["r2"]
+        # Fixed: Changed target lookups from uppercase "AQI_t1" to lowercase "aqi_t1" strings
+        r1  = m["aqi_t1"]["rmse"]
+        r2  = m["aqi_t2"]["rmse"]
+        r3  = m["aqi_t3"]["rmse"]
+        r2v = m["aqi_t1"]["r2"]
         avg = res["avg_rmse"]
         print(f"  {name:<14} {r1:>9.2f} {r2:>9.2f} {r3:>9.2f} {avg:>10.2f} {r2v:>8.4f}")
 
