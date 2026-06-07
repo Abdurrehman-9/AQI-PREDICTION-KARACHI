@@ -3,11 +3,12 @@ name: Feature Pipeline (Hourly)
 on:
   workflow_dispatch: # Allows manual triggers via the green button
   schedule:
-    - cron: '0 * * * *' # Matches your DAG exactly: Runs hourly on the hour
+    - cron: '0 * * * *' # Runs hourly on the hour
 
 jobs:
   run_hourly_pipeline:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # Prevents the job from hanging indefinitely if GitHub or an API glitches
 
     steps:
       - name: Checkout Repository
@@ -21,7 +22,6 @@ jobs:
 
       - name: Install Project Dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install pandas numpy requests "hopsworks==4.7.*" pyarrow python-dotenv
 
       # ─── TASK 1: TRANSLATED FROM AIRFLOW 'health_check' ─────────────────
@@ -32,7 +32,7 @@ jobs:
           echo "Starting AQI Feature Pipeline at $(date -u)"
           python -c "
           import requests
-          r = requests.get('https://api.waqi.info/feed/A471613/?token=${{ secrets.AQICN_TOKEN }}')
+          r = requests.get('https://api.waqi.info/feed/geo:24.8607;67.0011/?token=${{ secrets.AQICN_TOKEN }}')
           print('AQICN reachable:', r.status_code == 200)
           "
 
@@ -44,7 +44,7 @@ jobs:
           HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
           HOPSWORKS_PROJECT: ${{ secrets.HOPSWORKS_PROJECT }}
           HOPSWORKS_HOST: ${{ secrets.HOPSWORKS_HOST }}
-          KARACHI_STATION_ID: "A471613"
+          KARACHI_STATION_ID: "geo:24.8607;67.0011"
           KARACHI_LAT: "24.8607"
           KARACHI_LON: "67.0011"
         run: |
